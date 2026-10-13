@@ -1,11 +1,9 @@
 /**
  * Renderer utama per-frame.
- * Menggabungkan:
- *   - Background koran procedural (bergantung pada tema headline)
- *   - Headline besar (auto-wrap, auto-fit)
- *   - Highlight kuning (opsional)
- *   - Chromatic aberration (opsional)
- *   - Animasi zoom & offset per segmen
+ *
+ * Mendukung 2 mode tema background:
+ *  - 'global'      : satu background dari SELURUH headline (Level A)
+ *  - 'perSegment'  : background di-generate per SEGMEN, di-crossfade antar segmen (Level B)
  */
 
 import type { ProjectState } from '../state/projectState';
@@ -22,12 +20,11 @@ export interface RenderContext {
 }
 
 // ---------------------------------------------------------------------------
-// Background cache
-// Cache di-key dengan SEMUA parameter yang memengaruhi hasil background,
-// termasuk hash dari headline (karena tema background mengikuti headline).
+// Cache — pakai Map agar bisa menampung banyak background (per-segmen).
+// Batasi jumlah cache untuk mencegah memory leak.
 // ---------------------------------------------------------------------------
-let _bgCache: HTMLCanvasElement | null = null;
-let _bgCacheKey = '';
+const bgCache = new Map<string, HTMLCanvasElement>();
+const MAX_CACHE = 24;
 
 function hashString(s: string): string {
   let h = 0;
@@ -37,22 +34,31 @@ function hashString(s: string): string {
   return h.toString(36);
 }
 
-function getBackgroundCanvas(
+function cacheKey(
   state: ProjectState,
   w: number,
   h: number,
-): HTMLCanvasElement {
-  const key = [
-    w,
-    h,
+  themeText: string,
+): string {
+  return [
+    w, h,
     state.backgroundStyle,
     state.blurDirection,
     state.blurIntensity,
     state.backgroundType,
-    hashString(state.text), // ⬅️ INI YANG BARU: background ikut tema headline
+    hashString(themeText),
   ].join('|');
+}
 
-  if (_bgCache && _bgCacheKey === key) return _bgCache;
+function getOrCreateBg(
+  state: ProjectState,
+  w: number,
+  h: number,
+  themeText: string,
+): HTMLCanvasElement {
+  const key = cacheKey(state, w, h, themeText);
+  const hit = bgCache.get(key);
+  if (hit) return hit;
 
   const c = document.createElement('canvas');
   c.width = w;
@@ -64,18 +70,22 @@ function getBackgroundCanvas(
     style: state.backgroundStyle,
     blurDirection: state.blurDirection,
     blurIntensity: state.blurIntensity,
-    headlineText: state.text, // ⬅️ INI YANG BARU
+    headlineText: themeText,
   });
 
-  _bgCache = c;
-  _bgCacheKey = key;
+  bgCache.set(key, c);
+
+  // LRU sederhana: hapus yang paling lama
+  if (bgCache.size > MAX_CACHE) {
+    const firstKey = bgCache.keys().next().value;
+    if (firstKey !== undefined) bgCache.delete(firstKey);
+  }
   return c;
 }
 
-/** Paksa invalidate cache (dipanggil sebelum ekspor, misal). */
+/** Paksa invalidate cache (dipanggil sebelum ekspor). */
 export function invalidateBackgroundCache() {
-  _bgCache = null;
-  _bgCacheKey = '';
+  bgCache.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -91,11 +101,76 @@ function progress(seg: Segment, timeMs: number): number {
   return easeOutQuad(t);
 }
 
-// ---------------------------------------------------------------------------
-// Font stack utama
-// ---------------------------------------------------------------------------
 const FONT_STACK =
   'Impact, "Arial Black", "Helvetica Neue", "Segoe UI", sans-serif';
+
+// ---------------------------------------------------------------------------
+// Background layer (dengan dukungan crossfade per-segmen)
+// ---------------------------------------------------------------------------
+function drawBackgroundLayer(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  state: ProjectState,
+  timeline: Timeline,
+  seg: Segment | null,
+  timeMs: number,
+) {
+  const isDynamic = state.backgroundType === 'dynamic';
+
+  // Zoom/pan untuk mode "dynamic"
+  let bgScale = 1;
+  let bgDx = 0;
+  let bgDy = 0;
+  if (isDynamic && seg) {
+    const p = progress(seg, timeMs);
+    bgScale = 1.05 + 0.05 * p;
+    bgDx = (1 - bgScale) * W * 0.5;
+    bgDy = (1 - bgScale) * H * 0.5;
+  }
+
+  const drawOne = (bg: HTMLCanvasElement, alpha: number) => {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(bg, bgDx, bgDy, W * bgScale, H * bgScale);
+    ctx.restore();
+  };
+
+  // ---------- Mode per-segment ----------
+  if (state.backgroundThemeMode === 'perSegment' && seg) {
+    const curBg = getOrCreateBg(state, W, H, seg.text);
+
+    const segIdx = timeline.segments.indexOf(seg);
+    const nextSeg = timeline.segments[segIdx + 1];
+
+    // Durasi crossfade efektif: tidak boleh lebih dari setengah durasi segmen
+    const segDuration = seg.endMs - seg.startMs;
+    const effectiveFade = Math.min(
+      state.backgroundCrossfadeMs,
+      segDuration * 0.5,
+    );
+
+    if (nextSeg && effectiveFade > 0) {
+      const fadeStart = seg.endMs - effectiveFade;
+      if (timeMs >= fadeStart) {
+        const alpha = Math.min(
+          1,
+          Math.max(0, (timeMs - fadeStart) / effectiveFade),
+        );
+        const nextBg = getOrCreateBg(state, W, H, nextSeg.text);
+        drawOne(curBg, 1);
+        drawOne(nextBg, alpha);
+        return;
+      }
+    }
+    drawOne(curBg, 1);
+    return;
+  }
+
+  // ---------- Mode global ----------
+  const globalBg = getOrCreateBg(state, W, H, state.text);
+  drawOne(globalBg, 1);
+}
 
 // ---------------------------------------------------------------------------
 // RENDER SATU FRAME
@@ -106,44 +181,26 @@ export function renderFrame(rc: RenderContext, timeMs: number) {
   ctx.save();
   ctx.clearRect(0, 0, width, height);
 
-  // ---- 1. Background ----
-  const bg = getBackgroundCanvas(state, width, height);
-  if (state.backgroundType === 'dynamic') {
-    // Dynamic: background ikut zoom & geser pelan mengikuti progress segmen
-    const seg = findSegmentAt(timeline, timeMs);
-    const p = seg ? progress(seg, timeMs) : 0;
-    const scale = 1.05 + 0.05 * p;
-    const dx = (1 - scale) * width * 0.5;
-    const dy = (1 - scale) * height * 0.5;
-    ctx.drawImage(bg, dx, dy, width * scale, height * scale);
-  } else {
-    // Static: gambar apa adanya
-    ctx.drawImage(bg, 0, 0);
-  }
-
-  // ---- 2. Ambil segmen aktif ----
+  // 1. Background (dengan tema mode)
   const seg = findSegmentAt(timeline, timeMs);
-  if (!seg) {
-    ctx.restore();
-    return;
-  }
+  drawBackgroundLayer(ctx, width, height, state, timeline, seg, timeMs);
+
+  // 2. Headline
+  if (!seg) { ctx.restore(); return; }
   const p = progress(seg, timeMs);
 
-  // ---- 3. Interpolasi zoom & offset ----
   const zoom = seg.zoomFrom + (seg.zoomTo - seg.zoomFrom) * p;
   const ox = seg.offsetXFrom + (seg.offsetXTo - seg.offsetXFrom) * p;
   const oy = seg.offsetYFrom + (seg.offsetYTo - seg.offsetYFrom) * p;
 
   const finalZoom = zoom * state.textScale;
 
-  // Transformasi ke titik tengah kanvas + offset
   ctx.translate(
     width / 2 + state.textX * width * 0.4 + ox * width,
     height / 2 + state.textY * height * 0.4 + oy * height,
   );
   ctx.scale(finalZoom, finalZoom);
 
-  // ---- 4. Gambar headline ----
   drawHeadline(ctx, seg, width, height, state);
 
   ctx.restore();
@@ -159,7 +216,6 @@ function drawHeadline(
   H: number,
   state: ProjectState,
 ) {
-  // Area teks = 82% lebar kanvas (biar terasa close-up)
   const maxW = W * 0.82;
   const layout = wrapHeadline(
     ctx,
@@ -182,7 +238,6 @@ function drawHeadline(
     const lineX = -line.width / 2;
     const lineY = startY + i * layout.lineHeight;
 
-    // ---- Highlight kuning (opsional) ----
     if (state.highlightOn) {
       const padX = layout.fontSize * 0.05;
       const padY = layout.fontSize * 0.04;
@@ -195,7 +250,6 @@ function drawHeadline(
       );
     }
 
-    // ---- Chromatic aberration (opsional) ----
     if (state.chromaticAberration) {
       ctx.save();
       ctx.globalCompositeOperation = 'screen';
@@ -206,7 +260,6 @@ function drawHeadline(
       ctx.restore();
     }
 
-    // ---- Teks utama ----
     ctx.fillStyle = '#0a0a0a';
     ctx.fillText(line.text, lineX, lineY);
   }
