@@ -60,33 +60,66 @@ export function CustomizePanel() {
       </Section>
 
       <Section title="Background">
-        <RadioGroup
-          value={s.backgroundType}
-          onChange={(v) => u('backgroundType', v as any)}
-          options={[{ v: 'static', l: 'Static' }, { v: 'dynamic', l: 'Dynamic' }]}
-        />
-        <RadioGroup
-          value={s.backgroundStyle}
-          onChange={(v) => u('backgroundStyle', v as any)}
-          options={[{ v: 'simple', l: 'Simple' }, { v: 'newspaper', l: 'Newspaper' }]}
-        />
-        <label className="row">
-          <span>Blur</span>
-          <select value={s.blurDirection} onChange={(e) => u('blurDirection', e.target.value as any)}>
-            <option value="vertical">Vertical</option>
-            <option value="radial">Radial</option>
-          </select>
-        </label>
-        <RadioGroup
-          value={s.blurIntensity}
-          onChange={(v) => u('blurIntensity', v as any)}
-          options={[
-            { v: 'low', l: 'Low' },
-            { v: 'medium', l: 'Medium' },
-            { v: 'high', l: 'High' },
-          ]}
-        />
-      </Section>
+  <RadioGroup
+    value={s.backgroundType}
+    onChange={(v) => u('backgroundType', v as any)}
+    options={[{ v: 'static', l: 'Static' }, { v: 'dynamic', l: 'Dynamic' }]}
+  />
+  <RadioGroup
+    value={s.backgroundStyle}
+    onChange={(v) => u('backgroundStyle', v as any)}
+    options={[{ v: 'simple', l: 'Simple' }, { v: 'newspaper', l: 'Newspaper' }]}
+  />
+
+  {/* ⬇️ BARU: mode tema background */}
+  <label className="row">
+    <span>Tema Background</span>
+    <select
+      value={s.backgroundThemeMode}
+      onChange={(e) => u('backgroundThemeMode', e.target.value as any)}
+    >
+      <option value="global">Global (Level A)</option>
+      <option value="perSegment">Per-Segmen (Level B)</option>
+    </select>
+  </label>
+
+  {s.backgroundThemeMode === 'perSegment' && (
+    <>
+      <Slider
+        label="Cross-fade (ms)"
+        min={0}
+        max={800}
+        step={20}
+        value={s.backgroundCrossfadeMs}
+        onChange={(v) => u('backgroundCrossfadeMs', v)}
+      />
+      <div className="hint">
+        Background koran berubah tiap segmen. Pecah teks jadi lebih banyak
+        segmen (mode Phrase/Word) untuk efek maksimal.
+      </div>
+    </>
+  )}
+
+  <label className="row">
+    <span>Blur</span>
+    <select
+      value={s.blurDirection}
+      onChange={(e) => u('blurDirection', e.target.value as any)}
+    >
+      <option value="vertical">Vertical</option>
+      <option value="radial">Radial</option>
+    </select>
+  </label>
+  <RadioGroup
+    value={s.blurIntensity}
+    onChange={(v) => u('blurIntensity', v as any)}
+    options={[
+      { v: 'low', l: 'Low' },
+      { v: 'medium', l: 'Medium' },
+      { v: 'high', l: 'High' },
+    ]}
+  />
+</Section>
 
       <Section title="Tipografi">
         <Toggle label="Text Highlight" value={s.highlightOn} onChange={(v) => u('highlightOn', v)} />
