@@ -3,6 +3,7 @@ import { create } from 'zustand';
 export type AspectRatio = '9:16' | '16:9' | '1:1' | '4:5' | '4:3' | 'custom';
 export type BackgroundType = 'static' | 'dynamic';
 export type BackgroundStyle = 'simple' | 'newspaper';
+export type BackgroundThemeMode = 'global' | 'perSegment';   // ⬅️ BARU
 export type BlurDirection = 'vertical' | 'radial';
 export type BlurIntensity = 'low' | 'medium' | 'high';
 export type SegmentationMode = 'sentence' | 'line' | 'phrase' | 'word';
@@ -28,6 +29,8 @@ export interface ProjectState {
   // Background
   backgroundType: BackgroundType;
   backgroundStyle: BackgroundStyle;
+  backgroundThemeMode: BackgroundThemeMode;   // ⬅️ BARU
+  backgroundCrossfadeMs: number;              // ⬅️ BARU
   blurDirection: BlurDirection;
   blurIntensity: BlurIntensity;
 
@@ -35,15 +38,15 @@ export interface ProjectState {
   highlightOn: boolean;
   highlightColor: string;
   chromaticAberration: boolean;
-  textX: number;   // -1..1 offset relative to center
+  textX: number;
   textY: number;
-  textScale: number; // 0.5..2
+  textScale: number;
 
   // Animation
   durationSec: number;
-  animationSpeed: number; // 0.5..2
+  animationSpeed: number;
   transitionDurationMs: number;
-  zoomIntensity: number;   // 0..1
+  zoomIntensity: number;
   movementIntensity: number;
   holdDurationMs: number;
   transitionStyle: TransitionStyle;
@@ -52,7 +55,7 @@ export interface ProjectState {
   // Audio
   soundEnabled: boolean;
   soundStyle: SoundStyle;
-  soundVolume: number; // 0..1
+  soundVolume: number;
   soundDensity: SoundDensity;
   bgMusicEnabled: boolean;
   bgMusicVolume: number;
@@ -62,7 +65,7 @@ export interface ProjectState {
   exportFormat: 'mp4';
   quality: 'standard' | 'high';
 
-  // Runtime (not part of persistent config)
+  // Runtime
   isRendering: boolean;
   renderProgress: number;
   renderStage: string;
@@ -81,6 +84,8 @@ const DEFAULTS = {
   customHeight: 1920,
   backgroundType: 'static' as BackgroundType,
   backgroundStyle: 'newspaper' as BackgroundStyle,
+  backgroundThemeMode: 'global' as BackgroundThemeMode,   // ⬅️ default: global
+  backgroundCrossfadeMs: 250,                              // ⬅️ default: 250ms
   blurDirection: 'vertical' as BlurDirection,
   blurIntensity: 'medium' as BlurIntensity,
   highlightOn: true,
