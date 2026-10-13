@@ -21,17 +21,46 @@ async function getFFmpeg(onLog?: (msg: string) => void): Promise<FFmpeg> {
   if (_ffmpegLoading) return _ffmpegLoading;
 
   _ffmpegLoading = (async () => {
+    if (typeof SharedArrayBuffer === 'undefined') {
+      throw new Error(
+        'SharedArrayBuffer tidak tersedia. Kemungkinan header COOP/COEP ' +
+        'belum aktif. Coba hard-refresh (Ctrl+Shift+R) atau tunggu deploy selesai.',
+      );
+    }
+
     const ff = new FFmpeg();
     if (onLog) ff.on('log', ({ message }) => onLog(message));
 
-    const base = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-    await ff.load({
-      coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
-      wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
-    });
-    _ffmpeg = ff;
-    _ffmpegLoaded = true;
-    return ff;
+    // Coba beberapa CDN — kalau yang pertama gagal, lanjut ke berikutnya
+    const cdnList = [
+      'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd',
+      'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd',
+      'https://cdn.skypack.dev/@ffmpeg/core@0.12.6/dist/umd',
+    ];
+
+    let lastError: any = null;
+    for (const base of cdnList) {
+      try {
+        console.log('[FFmpeg] Trying CDN:', base);
+        await ff.load({
+          coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+          wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+        });
+        console.log('[FFmpeg] Loaded OK from', base);
+        _ffmpeg = ff;
+        _ffmpegLoaded = true;
+        return ff;
+      } catch (err: any) {
+        console.warn('[FFmpeg] Failed from', base, err);
+        lastError = err;
+      }
+    }
+
+    _ffmpegLoading = null;
+    throw new Error(
+      'Gagal memuat FFmpeg dari semua CDN. Detail: ' +
+      (lastError?.message ?? String(lastError)),
+    );
   })();
 
   return _ffmpegLoading;
