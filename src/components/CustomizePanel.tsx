@@ -287,9 +287,14 @@ function GenerateButton() {
       const url = URL.createObjectURL(blob);
       u('renderedBlobUrl', url);
     } catch (err: any) {
-      console.error(err);
-      alert('Gagal render: ' + (err?.message ?? 'Error tidak diketahui'));
-    } finally {
+  console.error('[Render]', err);
+  const msg =
+    err?.message ??
+    err?.toString?.() ??
+    (typeof err === 'string' ? err : JSON.stringify(err)) ??
+    'Error tidak diketahui';
+  alert('Gagal render:\n\n' + msg);
+} finally {
       u('isRendering', false);
       u('renderProgress', 0);
       u('renderStage', '');
