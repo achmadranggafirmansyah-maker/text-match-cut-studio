@@ -278,7 +278,7 @@ function GenerateButton() {
         timeline,
         width,
         height,
-        onProgress: (p, stage) => {
+        onProgress: (p: number, stage: string) => {
           u('renderProgress', p);
           u('renderStage', stage);
         },
